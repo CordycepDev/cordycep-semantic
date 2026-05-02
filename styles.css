@@ -37,6 +37,24 @@
 	color: var(--text-normal);
 }
 
+.cordycep-header-controls {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+.cordycep-sort-select {
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	font-size: 11px;
+	padding: 1px 4px;
+	cursor: pointer;
+}
+.cordycep-sort-select:hover {
+	color: var(--text-normal);
+}
+
 .cordycep-related-status,
 .cordycep-graph-status {
 	font-size: 11px;

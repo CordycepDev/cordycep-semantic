@@ -3,6 +3,7 @@ import type CordycepSemanticPlugin from "./main";
 import type { QueryResult } from "./client";
 import { debounce, stripFrontmatter } from "./util";
 import { getLinkContext, buildContextualQuery, linkedPathsAsResults, mergeLinkedAndSemantic } from "./links";
+import type { SortMode } from "./settings";
 
 export const RELATED_VIEW_TYPE = "cordycep-semantic-related";
 
@@ -15,6 +16,8 @@ export class RelatedNotesView extends ItemView {
 	private detachActiveLeafChange: (() => void) | null = null;
 	private detachFileOpen: (() => void) | null = null;
 	private detachStatus: (() => void) | null = null;
+	private sortMode: SortMode | null = null; // session override; null = use plugin default
+	private lastResults: { merged: QueryResult[]; linkedPaths: Set<string> } | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: CordycepSemanticPlugin) {
 		super(leaf);
@@ -44,7 +47,23 @@ export class RelatedNotesView extends ItemView {
 
 		const header = root.createDiv({ cls: "cordycep-related-header" });
 		header.createEl("h4", { text: "Related notes" });
-		const refresh = header.createEl("button", { cls: "cordycep-icon-btn", attr: { "aria-label": "Refresh" } });
+		const headerRight = header.createDiv({ cls: "cordycep-header-controls" });
+		const sortSelect = headerRight.createEl("select", { cls: "cordycep-sort-select" });
+		const opts: [SortMode, string][] = [
+			["linked-then-score", "Linked → score"],
+			["score", "Score"],
+			["linked-then-name", "Linked → A→Z"],
+			["recent", "Recent"],
+		];
+		for (const [val, lbl] of opts) {
+			const opt = sortSelect.createEl("option", { value: val, text: lbl });
+			if (val === (this.sortMode ?? this.plugin.settings.defaultSort)) opt.selected = true;
+		}
+		sortSelect.addEventListener("change", () => {
+			this.sortMode = sortSelect.value as SortMode;
+			void this.run(true);
+		});
+		const refresh = headerRight.createEl("button", { cls: "cordycep-icon-btn", attr: { "aria-label": "Refresh" } });
 		setIcon(refresh, "refresh-cw");
 		refresh.addEventListener("click", () => void this.run(true));
 
@@ -103,7 +122,14 @@ export class RelatedNotesView extends ItemView {
 			const semantic = await this.plugin.client.querySimilarFiles(query, k * 2, file.path);
 			const linkedAsResults = linkedPathsAsResults(this.app, ctx.linkedPaths)
 				.filter((r) => r.vaultPath !== file.path);
-			const merged = mergeLinkedAndSemantic(semantic, linkedAsResults, ctx.linkedPaths, k);
+			const merged = mergeLinkedAndSemantic(semantic, linkedAsResults, {
+				linkedPaths: ctx.linkedPaths,
+				sortMode: this.sortMode ?? this.plugin.settings.defaultSort,
+				linkBoost: this.plugin.settings.linkBoost,
+				limit: k,
+				app: this.app,
+			});
+			this.lastResults = { merged, linkedPaths: ctx.linkedPaths };
 			this.renderResults(merged, ctx.linkedPaths);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -165,9 +191,11 @@ export class RelatedNotesView extends ItemView {
 				this.openResult(r, e.metaKey || e.ctrlKey);
 			});
 			if (this.plugin.settings.showScores && r.score > 0) {
+				const boosted = Math.min(1.5, r.score + (linked ? this.plugin.settings.linkBoost : 0));
 				titleRow.createSpan({
 					cls: "cordycep-score",
-					text: r.score.toFixed(2),
+					text: boosted.toFixed(2) + (linked && this.plugin.settings.linkBoost > 0 ? "*" : ""),
+					attr: { title: linked ? `Semantic ${r.score.toFixed(2)} + boost ${this.plugin.settings.linkBoost.toFixed(2)}` : "" },
 				});
 			}
 			if (r.snippet) {

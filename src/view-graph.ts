@@ -33,13 +33,36 @@ interface GraphLink extends SimulationLinkDatum<GraphNode> {
 	linked: boolean; // true when this edge corresponds to an actual Obsidian link
 }
 
-const FOLDER_PALETTE: Record<string, string> = {
+const DEFAULT_FOLDER_PALETTE: Record<string, string> = {
 	"Walk of Life": "#7aa2f7",
 	"Zen": "#9ece6a",
 	"Academy": "#e0af68",
 	"(root)": "#bb9af7",
 };
 const FALLBACK_COLOR = "#7dcfff";
+
+function parseFolderPalette(raw: string): Record<string, string> {
+	if (!raw.trim()) return DEFAULT_FOLDER_PALETTE;
+	try {
+		const parsed = JSON.parse(raw);
+		if (parsed && typeof parsed === "object") {
+			return parsed as Record<string, string>;
+		}
+	} catch {
+		// fall through
+	}
+	return DEFAULT_FOLDER_PALETTE;
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+	const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+	if (!m) return `rgba(125,207,255,${alpha})`;
+	const v = parseInt(m[1], 16);
+	const r = (v >> 16) & 0xff;
+	const g = (v >> 8) & 0xff;
+	const b = v & 0xff;
+	return `rgba(${r},${g},${b},${alpha})`;
+}
 
 export class NeighborhoodGraphView extends ItemView {
 	private plugin: CordycepSemanticPlugin;
@@ -323,7 +346,14 @@ export class NeighborhoodGraphView extends ItemView {
 		if (!ctx) return;
 		const w = this.canvas.clientWidth;
 		const h = this.canvas.clientHeight;
-		ctx.clearRect(0, 0, w, h);
+		const colorLinked = this.plugin.settings.colorLinked;
+		const colorSemantic = this.plugin.settings.colorSemantic;
+		const colorCenter = this.plugin.settings.colorCenter;
+		const colorBg = this.plugin.settings.colorBackground;
+		const folderPalette = parseFolderPalette(this.plugin.settings.folderPalette);
+
+		ctx.fillStyle = colorBg;
+		ctx.fillRect(0, 0, w, h);
 
 		ctx.save();
 		ctx.translate(this.transform.x, this.transform.y);
@@ -340,11 +370,11 @@ export class NeighborhoodGraphView extends ItemView {
 			if (link.linked) {
 				ctx.setLineDash([]);
 				ctx.lineWidth = 1.5 + link.score * 2.5;
-				ctx.strokeStyle = `rgba(255, 158, 100, ${0.6 + link.score * 0.35})`;
+				ctx.strokeStyle = hexToRgba(colorLinked, 0.6 + link.score * 0.35);
 			} else {
 				ctx.setLineDash([5, 4]);
 				ctx.lineWidth = 0.5 + link.score * 1.5;
-				ctx.strokeStyle = `rgba(125, 207, 255, ${0.25 + link.score * 0.45})`;
+				ctx.strokeStyle = hexToRgba(colorSemantic, 0.25 + link.score * 0.45);
 			}
 			ctx.stroke();
 			ctx.setLineDash([]);
@@ -363,9 +393,9 @@ export class NeighborhoodGraphView extends ItemView {
 				const my = ((s.y ?? 0) + (t.y ?? 0)) / 2;
 				const text = link.score.toFixed(2);
 				const tw = ctx.measureText(text).width;
-				ctx.fillStyle = "rgba(15,15,20,0.7)";
+				ctx.fillStyle = hexToRgba(colorBg, 0.85);
 				ctx.fillRect(mx - tw / 2 - 3, my - 7, tw + 6, 14);
-				ctx.fillStyle = link.linked ? "#ffd9b8" : "#cde7ff";
+				ctx.fillStyle = link.linked ? hexToRgba(colorLinked, 0.95) : hexToRgba(colorSemantic, 0.95);
 				ctx.fillText(text, mx, my);
 			}
 		}
@@ -380,13 +410,13 @@ export class NeighborhoodGraphView extends ItemView {
 				ctx.beginPath();
 				ctx.arc(node.x, node.y!, r + 4, 0, Math.PI * 2);
 				ctx.lineWidth = 2;
-				ctx.strokeStyle = "rgba(255, 158, 100, 0.85)";
+				ctx.strokeStyle = hexToRgba(colorLinked, 0.85);
 				ctx.stroke();
 			}
 
 			ctx.beginPath();
 			ctx.arc(node.x, node.y!, r, 0, Math.PI * 2);
-			ctx.fillStyle = node.ring === 0 ? "#ff9e64" : (FOLDER_PALETTE[node.folder] ?? FALLBACK_COLOR);
+			ctx.fillStyle = node.ring === 0 ? colorCenter : (folderPalette[node.folder] ?? FALLBACK_COLOR);
 			ctx.fill();
 
 			if (node === this.hovered) {
@@ -395,10 +425,12 @@ export class NeighborhoodGraphView extends ItemView {
 				ctx.stroke();
 			}
 
-			// Always-visible name + score
+			// Always-visible name + score (with link boost applied)
 			const showScore = this.plugin.settings.showScores && node.ring !== 0;
+			const boost = node.linked ? this.plugin.settings.linkBoost : 0;
+			const displayedScore = Math.min(1.5, node.bestScore + boost);
 			const labelText = showScore
-				? `${node.label}  ${node.bestScore.toFixed(2)}`
+				? `${node.label}  ${displayedScore.toFixed(2)}${boost > 0 ? "*" : ""}`
 				: node.label;
 			ctx.fillStyle = node === this.hovered ? "#ffffff" : "rgba(225,225,235,0.95)";
 			ctx.font = `${node.ring === 0 ? 13 : 11}px var(--font-interface)`;
@@ -406,7 +438,7 @@ export class NeighborhoodGraphView extends ItemView {
 			ctx.textBaseline = "middle";
 			// Draw a subtle background pill behind the label so it's readable over edges
 			const lw = ctx.measureText(labelText).width;
-			ctx.fillStyle = "rgba(15,15,20,0.55)";
+			ctx.fillStyle = hexToRgba(colorBg, 0.7);
 			ctx.fillRect(node.x + r + 2, node.y! - 8, lw + 6, 16);
 			ctx.fillStyle = node === this.hovered ? "#ffffff" : "rgba(225,225,235,0.95)";
 			ctx.fillText(labelText, node.x + r + 5, node.y!);
@@ -508,14 +540,16 @@ export class NeighborhoodGraphView extends ItemView {
 			{ passive: false }
 		);
 
-		// Pan with right-mouse drag on empty canvas.
+		// Pan with middle-mouse OR right-mouse drag.
 		let panOrigin: { x: number; y: number } | null = null;
 		let panStart: { x: number; y: number } | null = null;
 		c.addEventListener("contextmenu", (e) => e.preventDefault());
 		c.addEventListener("mousedown", (e) => {
-			if (e.button !== 2) return;
+			if (e.button !== 1 && e.button !== 2) return;
+			e.preventDefault();
 			panOrigin = { x: e.clientX, y: e.clientY };
 			panStart = { x: this.transform.x, y: this.transform.y };
+			c.style.cursor = "grabbing";
 		});
 		window.addEventListener("mousemove", (e) => {
 			if (!panOrigin || !panStart) return;
@@ -524,8 +558,15 @@ export class NeighborhoodGraphView extends ItemView {
 			this.draw();
 		});
 		window.addEventListener("mouseup", () => {
+			if (panOrigin) c.style.cursor = "default";
 			panOrigin = null;
 			panStart = null;
+		});
+
+		// Middle-button auxclick fires on browsers; consume it so it doesn't
+		// trigger the default "scroll wheel" behavior in some embeds.
+		c.addEventListener("auxclick", (e) => {
+			if (e.button === 1) e.preventDefault();
 		});
 	}
 

@@ -40,6 +40,15 @@ export default class CordycepSemanticPlugin extends Plugin {
 		this.addCommand({
 			id: "open-neighborhood-graph",
 			name: "Open neighborhood graph",
+			callback: () => void this.activateView(
+				GRAPH_VIEW_TYPE,
+				this.settings.graphOpensInRightSidebar ? "right" : "tab"
+			),
+		});
+
+		this.addCommand({
+			id: "open-neighborhood-graph-tab",
+			name: "Open neighborhood graph (in tab)",
 			callback: () => void this.activateView(GRAPH_VIEW_TYPE, "tab"),
 		});
 

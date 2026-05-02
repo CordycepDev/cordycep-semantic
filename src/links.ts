@@ -1,5 +1,6 @@
 import { App, TFile, CachedMetadata } from "obsidian";
 import type { QueryResult } from "./client";
+import type { SortMode } from "./settings";
 
 export interface LinkContext {
 	linkedPaths: Set<string>;
@@ -63,15 +64,22 @@ export function linkedPathsAsResults(app: App, linkedPaths: Set<string>): QueryR
 	return out;
 }
 
+export interface MergeOptions {
+	linkedPaths: Set<string>;
+	sortMode: SortMode;
+	linkBoost: number;
+	limit: number;
+	app?: App; // needed for "recent" sort to read mtimes
+}
+
 // Merge linked + semantic results by vault path. Linked-only entries keep
 // their placeholder score (0). Linked entries also present in semantic
-// results adopt the semantic snippet + score. Sort: linked first, then
-// semantic-only by score desc.
+// results adopt the semantic snippet + score. Sorting is governed by
+// MergeOptions.sortMode.
 export function mergeLinkedAndSemantic(
 	semantic: QueryResult[],
 	linked: QueryResult[],
-	linkedPaths: Set<string>,
-	limit: number
+	opts: MergeOptions
 ): QueryResult[] {
 	const byKey = new Map<string, QueryResult>();
 	for (const r of semantic) {
@@ -83,13 +91,37 @@ export function mergeLinkedAndSemantic(
 		if (!byKey.has(key)) byKey.set(key, r);
 	}
 	const merged = Array.from(byKey.values());
-	merged.sort((a, b) => {
-		const aLinked = a.vaultPath ? linkedPaths.has(a.vaultPath) : false;
-		const bLinked = b.vaultPath ? linkedPaths.has(b.vaultPath) : false;
-		if (aLinked !== bLinked) return aLinked ? -1 : 1;
-		return b.score - a.score;
-	});
-	return merged.slice(0, limit);
+	merged.sort((a, b) => compare(a, b, opts));
+	return merged.slice(0, opts.limit);
+}
+
+function compare(a: QueryResult, b: QueryResult, opts: MergeOptions): number {
+	const aLinked = a.vaultPath ? opts.linkedPaths.has(a.vaultPath) : false;
+	const bLinked = b.vaultPath ? opts.linkedPaths.has(b.vaultPath) : false;
+	const aBoosted = a.score + (aLinked ? opts.linkBoost : 0);
+	const bBoosted = b.score + (bLinked ? opts.linkBoost : 0);
+
+	switch (opts.sortMode) {
+		case "score":
+			return bBoosted - aBoosted;
+		case "linked-then-name": {
+			if (aLinked !== bLinked) return aLinked ? -1 : 1;
+			return a.displayName.localeCompare(b.displayName);
+		}
+		case "recent":
+			return mtime(opts.app, b) - mtime(opts.app, a);
+		case "linked-then-score":
+		default: {
+			if (aLinked !== bLinked) return aLinked ? -1 : 1;
+			return bBoosted - aBoosted;
+		}
+	}
+}
+
+function mtime(app: App | undefined, r: QueryResult): number {
+	if (!app || !r.vaultPath) return 0;
+	const f = app.vault.getAbstractFileByPath(r.vaultPath);
+	return f instanceof TFile ? f.stat.mtime : 0;
 }
 
 // Build the query text used for "find related to this note" — leads with

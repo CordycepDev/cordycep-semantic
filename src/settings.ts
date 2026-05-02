@@ -1,6 +1,8 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type CordycepSemanticPlugin from "./main";
 
+export type SortMode = "linked-then-score" | "score" | "linked-then-name" | "recent";
+
 export interface CordycepSettings {
 	owuiBaseUrl: string;
 	apiBaseUrl: string;
@@ -16,6 +18,14 @@ export interface CordycepSettings {
 	paletteDebounceMs: number;
 	minNoteChars: number;
 	showScores: boolean;
+	defaultSort: SortMode;
+	linkBoost: number;            // additive score boost applied to linked-to-active results
+	graphOpensInRightSidebar: boolean;
+	colorCenter: string;
+	colorLinked: string;
+	colorSemantic: string;
+	colorBackground: string;
+	folderPalette: string;        // JSON map: { "Walk of Life": "#...", ... } — empty/invalid = defaults
 }
 
 export const DEFAULT_SETTINGS: CordycepSettings = {
@@ -33,6 +43,14 @@ export const DEFAULT_SETTINGS: CordycepSettings = {
 	paletteDebounceMs: 250,
 	minNoteChars: 200,
 	showScores: true,
+	defaultSort: "linked-then-score",
+	linkBoost: 0.20,
+	graphOpensInRightSidebar: true,
+	colorCenter: "#ff9e64",
+	colorLinked: "#ff9e64",
+	colorSemantic: "#7dcfff",
+	colorBackground: "#0d0d12",
+	folderPalette: '{"Walk of Life":"#7aa2f7","Zen":"#9ece6a","Academy":"#e0af68","(root)":"#bb9af7"}',
 };
 
 export class CordycepSettingTab extends PluginSettingTab {
@@ -239,5 +257,79 @@ export class CordycepSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		new Setting(containerEl)
+			.setName("Default sort (sidebar)")
+			.addDropdown((d) =>
+				d
+					.addOption("linked-then-score", "Linked first, then score")
+					.addOption("score", "Score (semantic)")
+					.addOption("linked-then-name", "Linked first, then alphabetical")
+					.addOption("recent", "Recently modified")
+					.setValue(this.plugin.settings.defaultSort)
+					.onChange(async (v) => {
+						this.plugin.settings.defaultSort = v as SortMode;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Backlink boost")
+			.setDesc("Additive bonus on the displayed/sort score for results that have an explicit wikilink to/from the active note.")
+			.addSlider((s) =>
+				s
+					.setLimits(0, 0.5, 0.05)
+					.setDynamicTooltip()
+					.setValue(this.plugin.settings.linkBoost)
+					.onChange(async (v) => {
+						this.plugin.settings.linkBoost = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Graph opens in right sidebar")
+			.setDesc("Off = open as a new tab.")
+			.addToggle((t) =>
+				t
+					.setValue(this.plugin.settings.graphOpensInRightSidebar)
+					.onChange(async (v) => {
+						this.plugin.settings.graphOpensInRightSidebar = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		containerEl.createEl("h3", { text: "Colors (graph)" });
+
+		const colorRow = (label: string, key: "colorCenter" | "colorLinked" | "colorSemantic" | "colorBackground", desc?: string) =>
+			new Setting(containerEl)
+				.setName(label)
+				.setDesc(desc ?? "")
+				.addText((t) => {
+					t.inputEl.type = "color";
+					t.setValue(this.plugin.settings[key]).onChange(async (v) => {
+						this.plugin.settings[key] = v;
+						await this.plugin.saveSettings();
+					});
+				});
+
+		colorRow("Center node", "colorCenter", "The active note in the graph.");
+		colorRow("Linked edges + halo", "colorLinked", "Color used for explicit Obsidian wikilinks.");
+		colorRow("Semantic edges", "colorSemantic", "Color used for semantic-only edges.");
+		colorRow("Graph background", "colorBackground");
+
+		new Setting(containerEl)
+			.setName("Folder palette")
+			.setDesc('JSON map from top-level folder name to hex color. Use "(root)" for root-level notes. Invalid JSON falls back to defaults.')
+			.addTextArea((t) => {
+				t.inputEl.rows = 4;
+				t.inputEl.style.fontFamily = "var(--font-monospace)";
+				t.inputEl.style.fontSize = "12px";
+				t.inputEl.style.width = "100%";
+				t.setValue(this.plugin.settings.folderPalette).onChange(async (v) => {
+					this.plugin.settings.folderPalette = v;
+					await this.plugin.saveSettings();
+				});
+			});
 	}
 }
