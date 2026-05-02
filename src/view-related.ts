@@ -2,7 +2,7 @@ import { ItemView, WorkspaceLeaf, TFile, MarkdownView, setIcon } from "obsidian"
 import type CordycepSemanticPlugin from "./main";
 import type { QueryResult } from "./client";
 import { debounce, stripFrontmatter } from "./util";
-import { getLinkContext, buildContextualQuery, linkedPathsAsResults, mergeLinkedAndSemantic } from "./links";
+import { getLinkContext, buildContextualQuery, linkedPathsAsResults, mergeLinkedAndSemantic, classifyLink, LinkKind, LinkContext } from "./links";
 import type { SortMode } from "./settings";
 
 export const RELATED_VIEW_TYPE = "cordycep-semantic-related";
@@ -17,7 +17,7 @@ export class RelatedNotesView extends ItemView {
 	private detachFileOpen: (() => void) | null = null;
 	private detachStatus: (() => void) | null = null;
 	private sortMode: SortMode | null = null; // session override; null = use plugin default
-	private lastResults: { merged: QueryResult[]; linkedPaths: Set<string> } | null = null;
+	private lastResults: { merged: QueryResult[]; ctx: LinkContext } | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: CordycepSemanticPlugin) {
 		super(leaf);
@@ -129,8 +129,8 @@ export class RelatedNotesView extends ItemView {
 				limit: k,
 				app: this.app,
 			});
-			this.lastResults = { merged, linkedPaths: ctx.linkedPaths };
-			this.renderResults(merged, ctx.linkedPaths);
+			this.lastResults = { merged, ctx };
+			this.renderResults(merged, ctx);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			this.renderEmpty(`Error: ${msg}`);
@@ -159,28 +159,39 @@ export class RelatedNotesView extends ItemView {
 		}
 	}
 
-	private renderResults(results: QueryResult[], linkedPaths: Set<string>) {
+	private renderResults(results: QueryResult[], ctx: LinkContext) {
 		this.listEl.empty();
 		this.renderStatus();
 		if (results.length === 0) {
 			this.listEl.createDiv({ cls: "cordycep-empty", text: "No related notes found." });
 			return;
 		}
-		const linkedCount = results.filter((r) => r.vaultPath && linkedPaths.has(r.vaultPath)).length;
-		const counts = this.listEl.createDiv({ cls: "cordycep-counts" });
-		counts.setText(`${results.length} results · ${linkedCount} linked · ${results.length - linkedCount} new`);
+
+		const counts = { forward: 0, back: 0, mutual: 0, none: 0 };
+		for (const r of results) counts[classifyLink(r.vaultPath, ctx)]++;
+		const countsEl = this.listEl.createDiv({ cls: "cordycep-counts" });
+		const parts: string[] = [`${results.length} results`];
+		if (counts.forward) parts.push(`${counts.forward} link`);
+		if (counts.back) parts.push(`${counts.back} back`);
+		if (counts.mutual) parts.push(`${counts.mutual} mutual`);
+		if (counts.none) parts.push(`${counts.none} new`);
+		countsEl.setText(parts.join(" · "));
 
 		for (const r of results) {
-			const linked = r.vaultPath ? linkedPaths.has(r.vaultPath) : false;
+			const kind: LinkKind = classifyLink(r.vaultPath, ctx);
+			const linked = kind !== "none";
 			const item = this.listEl.createDiv({
-				cls: `cordycep-result ${linked ? "is-linked" : "is-unlinked"}`,
+				cls: `cordycep-result is-${kind}`,
 			});
+			item.style.borderLeftColor = this.colorForKind(kind);
 			const titleRow = item.createDiv({ cls: "cordycep-title-row" });
 			const badge = titleRow.createSpan({
-				cls: `cordycep-badge ${linked ? "linked" : "unlinked"}`,
-				attr: { "aria-label": linked ? "Already linked" : "Not linked" },
+				cls: `cordycep-badge kind-${kind}`,
+				attr: { "aria-label": this.labelForKind(kind, true) },
 			});
-			badge.setText(linked ? "LINKED" : "NEW");
+			badge.setText(this.labelForKind(kind, false));
+			badge.style.backgroundColor = this.colorForKind(kind);
+			badge.style.color = this.contrastInk(this.colorForKind(kind));
 			const title = titleRow.createEl("a", {
 				cls: "cordycep-title",
 				text: r.displayName,
@@ -202,6 +213,38 @@ export class RelatedNotesView extends ItemView {
 				item.createDiv({ cls: "cordycep-snippet", text: r.snippet });
 			}
 		}
+	}
+
+	private colorForKind(kind: LinkKind): string {
+		const s = this.plugin.settings;
+		switch (kind) {
+			case "forward": return s.colorLinked;
+			case "back": return s.colorBacklink;
+			case "mutual": return s.colorMutual;
+			case "none":
+			default: return s.colorSemantic;
+		}
+	}
+
+	private labelForKind(kind: LinkKind, long: boolean): string {
+		switch (kind) {
+			case "forward": return long ? "Forward link (this note → result)" : "LINK";
+			case "back": return long ? "Backlink (result → this note)" : "BACK";
+			case "mutual": return long ? "Mutual link (both directions)" : "BOTH";
+			case "none":
+			default: return long ? "Semantic-only neighbor" : "NEW";
+		}
+	}
+
+	// Pick legible ink (black/white) for a given hex background.
+	private contrastInk(hex: string): string {
+		const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+		if (!m) return "#000";
+		const v = parseInt(m[1], 16);
+		const r = (v >> 16) & 0xff, g = (v >> 8) & 0xff, b = v & 0xff;
+		// Relative luminance approximation
+		const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+		return lum > 0.6 ? "#0a0a10" : "#f5f5fa";
 	}
 
 	private openResult(r: QueryResult, newPane: boolean) {

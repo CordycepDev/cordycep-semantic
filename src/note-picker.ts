@@ -39,7 +39,8 @@ export class NoteSourcePickerModal extends FuzzySuggestModal<TFile> {
 				prefilledQuery: query,
 				header: `Notes similar to: ${file.basename}`,
 				excludePath: file.path,
-				linkedPaths: ctx.linkedPaths,
+				forwardPaths: ctx.forwardPaths,
+				backPaths: ctx.backPaths,
 			});
 			modal.open();
 		} catch (err) {

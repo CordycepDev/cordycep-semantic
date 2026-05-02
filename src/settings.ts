@@ -22,8 +22,10 @@ export interface CordycepSettings {
 	linkBoost: number;            // additive score boost applied to linked-to-active results
 	graphOpensInRightSidebar: boolean;
 	colorCenter: string;
-	colorLinked: string;
-	colorSemantic: string;
+	colorLinked: string;          // forward link (this note → result)
+	colorBacklink: string;        // back link (result → this note)
+	colorMutual: string;          // both directions
+	colorSemantic: string;        // semantic-only
 	colorBackground: string;
 	folderPalette: string;        // JSON map: { "Walk of Life": "#...", ... } — empty/invalid = defaults
 }
@@ -47,8 +49,10 @@ export const DEFAULT_SETTINGS: CordycepSettings = {
 	linkBoost: 0.20,
 	graphOpensInRightSidebar: true,
 	colorCenter: "#ff9e64",
-	colorLinked: "#ff9e64",
-	colorSemantic: "#7dcfff",
+	colorLinked: "#ff9e64",     // orange — forward
+	colorBacklink: "#bb9af7",   // purple — back
+	colorMutual: "#9ece6a",     // green — mutual
+	colorSemantic: "#7dcfff",   // blue — semantic-only
 	colorBackground: "#0d0d12",
 	folderPalette: '{"Walk of Life":"#7aa2f7","Zen":"#9ece6a","Academy":"#e0af68","(root)":"#bb9af7"}',
 };
@@ -301,7 +305,7 @@ export class CordycepSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("h3", { text: "Colors (graph)" });
 
-		const colorRow = (label: string, key: "colorCenter" | "colorLinked" | "colorSemantic" | "colorBackground", desc?: string) =>
+		const colorRow = (label: string, key: "colorCenter" | "colorLinked" | "colorBacklink" | "colorMutual" | "colorSemantic" | "colorBackground", desc?: string) =>
 			new Setting(containerEl)
 				.setName(label)
 				.setDesc(desc ?? "")
@@ -314,8 +318,10 @@ export class CordycepSettingTab extends PluginSettingTab {
 				});
 
 		colorRow("Center node", "colorCenter", "The active note in the graph.");
-		colorRow("Linked edges + halo", "colorLinked", "Color used for explicit Obsidian wikilinks.");
-		colorRow("Semantic edges", "colorSemantic", "Color used for semantic-only edges.");
+		colorRow("Forward link (LINK)", "colorLinked", "This note → result note.");
+		colorRow("Backlink (BACK)", "colorBacklink", "Result note → this note.");
+		colorRow("Mutual link (BOTH)", "colorMutual", "Both directions linked.");
+		colorRow("Semantic edges", "colorSemantic", "Color for semantic-only edges (NEW results).");
 		colorRow("Graph background", "colorBackground");
 
 		new Setting(containerEl)

@@ -2,8 +2,12 @@ import { App, TFile, CachedMetadata } from "obsidian";
 import type { QueryResult } from "./client";
 import type { SortMode } from "./settings";
 
+export type LinkKind = "forward" | "back" | "mutual" | "none";
+
 export interface LinkContext {
-	linkedPaths: Set<string>;
+	forwardPaths: Set<string>;  // notes the active file links TO
+	backPaths: Set<string>;     // notes that link TO the active file
+	linkedPaths: Set<string>;   // union of forward + back (sort/grouping convenience)
 	aliases: string[];
 	title: string;
 }
@@ -13,24 +17,39 @@ export interface LinkContext {
 // Aliases: declared in the file's YAML frontmatter (`aliases:`).
 export function getLinkContext(app: App, file: TFile): LinkContext {
 	const cache = app.metadataCache;
-	const linked = new Set<string>();
+	const forward = new Set<string>();
+	const back = new Set<string>();
 
 	const resolved = cache.resolvedLinks?.[file.path] ?? {};
-	for (const target of Object.keys(resolved)) linked.add(target);
+	for (const target of Object.keys(resolved)) forward.add(target);
 
 	for (const [src, targets] of Object.entries(cache.resolvedLinks ?? {})) {
-		if ((targets as Record<string, number>)[file.path]) linked.add(src);
+		if ((targets as Record<string, number>)[file.path]) back.add(src);
 	}
+
+	const linked = new Set<string>([...forward, ...back]);
 
 	const meta: CachedMetadata | null = cache.getFileCache(file);
 	const fm = meta?.frontmatter ?? {};
 	const aliases = normalizeAliases(fm.aliases);
 
 	return {
+		forwardPaths: forward,
+		backPaths: back,
 		linkedPaths: linked,
 		aliases,
 		title: file.basename,
 	};
+}
+
+export function classifyLink(path: string | null, ctx: { forwardPaths: Set<string>; backPaths: Set<string> }): LinkKind {
+	if (!path) return "none";
+	const f = ctx.forwardPaths.has(path);
+	const b = ctx.backPaths.has(path);
+	if (f && b) return "mutual";
+	if (f) return "forward";
+	if (b) return "back";
+	return "none";
 }
 
 function normalizeAliases(raw: unknown): string[] {

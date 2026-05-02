@@ -2,12 +2,14 @@ import { App, SuggestModal, TFile } from "obsidian";
 import type CordycepSemanticPlugin from "./main";
 import type { QueryResult } from "./client";
 import { debounce } from "./util";
+import { classifyLink, LinkKind } from "./links";
 
 export interface PaletteOptions {
 	prefilledQuery?: string;
 	header?: string;
 	excludePath?: string;
-	linkedPaths?: Set<string>;
+	forwardPaths?: Set<string>;
+	backPaths?: Set<string>;
 }
 
 export class SemanticSearchModal extends SuggestModal<QueryResult> {
@@ -95,17 +97,21 @@ export class SemanticSearchModal extends SuggestModal<QueryResult> {
 
 	renderSuggestion(value: QueryResult, el: HTMLElement) {
 		el.addClass("cordycep-suggestion");
-		const linked = !!(value.vaultPath && this.opts.linkedPaths?.has(value.vaultPath));
-		el.toggleClass("is-linked", linked);
-		el.toggleClass("is-unlinked", !linked && !!value.vaultPath);
+		const ctx = {
+			forwardPaths: this.opts.forwardPaths ?? new Set<string>(),
+			backPaths: this.opts.backPaths ?? new Set<string>(),
+		};
+		const kind: LinkKind = classifyLink(value.vaultPath, ctx);
+		el.addClass(`is-${kind}`);
 
 		const titleRow = el.createDiv({ cls: "cordycep-title-row" });
 		if (value.vaultPath) {
 			const badge = titleRow.createSpan({
-				cls: `cordycep-badge ${linked ? "linked" : "unlinked"}`,
-				attr: { "aria-label": linked ? "Already linked" : "Not linked" },
+				cls: `cordycep-badge kind-${kind}`,
 			});
-			badge.setText(linked ? "LINKED" : "NEW");
+			badge.setText(this.labelForKind(kind));
+			badge.style.backgroundColor = this.colorForKind(kind);
+			badge.style.color = this.contrastInk(this.colorForKind(kind));
 		}
 		titleRow.createSpan({ cls: "cordycep-title", text: value.displayName });
 		if (this.plugin.settings.showScores && value.score) {
@@ -117,6 +123,36 @@ export class SemanticSearchModal extends SuggestModal<QueryResult> {
 		if (value.snippet) {
 			el.createDiv({ cls: "cordycep-snippet", text: value.snippet });
 		}
+	}
+
+	private colorForKind(kind: LinkKind): string {
+		const s = this.plugin.settings;
+		switch (kind) {
+			case "forward": return s.colorLinked;
+			case "back": return s.colorBacklink;
+			case "mutual": return s.colorMutual;
+			case "none":
+			default: return s.colorSemantic;
+		}
+	}
+
+	private labelForKind(kind: LinkKind): string {
+		switch (kind) {
+			case "forward": return "LINK";
+			case "back": return "BACK";
+			case "mutual": return "BOTH";
+			case "none":
+			default: return "NEW";
+		}
+	}
+
+	private contrastInk(hex: string): string {
+		const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+		if (!m) return "#000";
+		const v = parseInt(m[1], 16);
+		const r = (v >> 16) & 0xff, g = (v >> 8) & 0xff, b = v & 0xff;
+		const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+		return lum > 0.6 ? "#0a0a10" : "#f5f5fa";
 	}
 
 	onChooseSuggestion(item: QueryResult, evt: MouseEvent | KeyboardEvent) {

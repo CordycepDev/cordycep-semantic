@@ -79,6 +79,10 @@ export class NeighborhoodGraphView extends ItemView {
 	private hovered: GraphNode | null = null;
 	private dragging: GraphNode | null = null;
 	private resizeObserver: ResizeObserver | null = null;
+	// Positions of nodes from the previous render, keyed by id. Lets nodes
+	// that survive a navigation (especially the new center = node you just
+	// clicked, and the old center) stay put instead of jolting around.
+	private carriedPositions = new Map<string, { x: number; y: number }>();
 
 	constructor(leaf: WorkspaceLeaf, plugin: CordycepSemanticPlugin) {
 		super(leaf);
@@ -169,6 +173,10 @@ export class NeighborhoodGraphView extends ItemView {
 		const file = this.app.workspace.getActiveFile();
 		if (!file || file.extension !== "md") return;
 		if (!force && file.path !== this.currentPath) return;
+
+		// Snapshot current node positions before we rebuild — nodes that
+		// survive into the next graph will reuse these (no jolt).
+		this.snapshotPositions();
 
 		const t0 = performance.now();
 		try {
@@ -321,8 +329,32 @@ export class NeighborhoodGraphView extends ItemView {
 		this.links = links;
 	}
 
+	private snapshotPositions() {
+		this.carriedPositions.clear();
+		for (const n of this.nodes) {
+			if (n.x != null && n.y != null) {
+				this.carriedPositions.set(n.id, { x: n.x, y: n.y });
+			}
+		}
+	}
+
+	private applyCarriedPositions() {
+		for (const n of this.nodes) {
+			const prev = this.carriedPositions.get(n.id);
+			if (!prev) continue;
+			n.x = prev.x;
+			n.y = prev.y;
+			// Pin so the new simulation lays out only the *new* nodes around
+			// them. Drag still works because the drag handler sets fx/fy
+			// directly and clears them on release.
+			n.fx = prev.x;
+			n.fy = prev.y;
+		}
+	}
+
 	private layoutAndStart() {
 		this.sim?.stop();
+		this.applyCarriedPositions();
 		const w = this.canvas.clientWidth;
 		const h = this.canvas.clientHeight;
 		this.sim = forceSimulation<GraphNode, GraphLink>(this.nodes)
@@ -338,7 +370,8 @@ export class NeighborhoodGraphView extends ItemView {
 			.force("collide", forceCollide<GraphNode>().radius((d) => 8 + Math.sqrt(d.weight) * 4));
 
 		this.sim.on("tick", () => this.draw());
-		this.transform = { x: 0, y: 0, k: 1 };
+		// Don't reset the pan/zoom on rebuild — keeps the camera steady
+		// across navigations.
 	}
 
 	private draw() {
