@@ -1,0 +1,168 @@
+.cordycep-related-root,
+.cordycep-graph-root {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	padding: 8px 10px;
+}
+
+.cordycep-related-header,
+.cordycep-graph-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 4px;
+}
+
+.cordycep-related-header h4,
+.cordycep-graph-header h4 {
+	margin: 0;
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	color: var(--text-muted);
+	text-transform: uppercase;
+}
+
+.cordycep-icon-btn {
+	background: transparent;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 2px 4px;
+	border-radius: 4px;
+}
+.cordycep-icon-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.cordycep-related-status,
+.cordycep-graph-status {
+	font-size: 11px;
+	color: var(--text-faint);
+	margin-bottom: 6px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.cordycep-dot.ok { color: var(--color-green); }
+.cordycep-dot.bad { color: var(--color-red); }
+
+.cordycep-related-list {
+	overflow-y: auto;
+	flex: 1;
+}
+
+.cordycep-result,
+.cordycep-suggestion {
+	padding: 8px 6px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+.cordycep-result:hover {
+	background: var(--background-modifier-hover);
+}
+
+.cordycep-title-row {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+}
+.cordycep-title {
+	color: var(--text-accent);
+	font-weight: 500;
+	cursor: pointer;
+	text-decoration: none;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	flex: 1;
+}
+.cordycep-title:hover {
+	text-decoration: underline;
+}
+.cordycep-score {
+	font-size: 10px;
+	font-family: var(--font-monospace);
+	color: var(--text-faint);
+	flex: 0 0 auto;
+}
+.cordycep-snippet {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-top: 4px;
+	line-height: 1.4;
+	max-height: 4.4em;
+	overflow: hidden;
+}
+
+.cordycep-empty {
+	color: var(--text-faint);
+	font-size: 12px;
+	padding: 12px 4px;
+}
+
+.cordycep-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1px 6px;
+	margin-right: 6px;
+	border-radius: 4px;
+	flex: 0 0 auto;
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	font-family: var(--font-monospace);
+}
+.cordycep-badge.linked {
+	color: #1a0f04;
+	background: #ff9e64;
+}
+.cordycep-badge.unlinked {
+	color: #04101a;
+	background: #7dcfff;
+}
+.cordycep-counts {
+	font-size: 10px;
+	font-family: var(--font-monospace);
+	color: var(--text-faint);
+	padding: 4px 0 6px;
+	border-bottom: 1px dashed var(--background-modifier-border);
+	margin-bottom: 4px;
+}
+.cordycep-result.is-linked {
+	border-left: 2px solid #ff9e64;
+	padding-left: 6px;
+}
+.cordycep-result.is-unlinked {
+	border-left: 2px solid transparent;
+	padding-left: 6px;
+}
+.cordycep-suggestion.is-linked {
+	border-left: 2px solid #ff9e64;
+}
+
+.cordycep-modal-header {
+	padding: 10px 14px 4px;
+	color: var(--text-muted);
+	font-size: 12px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.cordycep-graph-canvas-wrap {
+	flex: 1;
+	position: relative;
+	overflow: hidden;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+}
+.cordycep-graph-canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+}

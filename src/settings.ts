@@ -1,0 +1,243 @@
+import { App, PluginSettingTab, Setting } from "obsidian";
+import type CordycepSemanticPlugin from "./main";
+
+export interface CordycepSettings {
+	owuiBaseUrl: string;
+	apiBaseUrl: string;
+	owuiApiKey: string;
+	kbName: string;
+	topKSidebar: number;
+	topKPalette: number;
+	graphFirstRingN: number;
+	graphSecondRingM: number;
+	graphScoreFloor: number;
+	graphDebounceMs: number;
+	sidebarDebounceMs: number;
+	paletteDebounceMs: number;
+	minNoteChars: number;
+	showScores: boolean;
+}
+
+export const DEFAULT_SETTINGS: CordycepSettings = {
+	owuiBaseUrl: "https://chat.cordycep.dev",
+	apiBaseUrl: "https://api.cordycep.dev",
+	owuiApiKey: "",
+	kbName: "Obsidian Vault",
+	topKSidebar: 10,
+	topKPalette: 15,
+	graphFirstRingN: 12,
+	graphSecondRingM: 5,
+	graphScoreFloor: 0.55,
+	graphDebounceMs: 1000,
+	sidebarDebounceMs: 600,
+	paletteDebounceMs: 250,
+	minNoteChars: 200,
+	showScores: true,
+};
+
+export class CordycepSettingTab extends PluginSettingTab {
+	plugin: CordycepSemanticPlugin;
+
+	constructor(app: App, plugin: CordycepSemanticPlugin) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
+
+	display(): void {
+		const { containerEl } = this;
+		containerEl.empty();
+		containerEl.createEl("h2", { text: "Cordycep Semantic" });
+
+		new Setting(containerEl)
+			.setName("Open WebUI base URL")
+			.setDesc("Base URL of your OWUI instance, e.g. https://chat.cordycep.dev")
+			.addText((t) =>
+				t
+					.setPlaceholder("https://chat.cordycep.dev")
+					.setValue(this.plugin.settings.owuiBaseUrl)
+					.onChange(async (v) => {
+						this.plugin.settings.owuiBaseUrl = v.trim().replace(/\/$/, "");
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("API base URL")
+			.setDesc("Base URL of ai-agent-api, e.g. https://api.cordycep.dev")
+			.addText((t) =>
+				t
+					.setPlaceholder("https://api.cordycep.dev")
+					.setValue(this.plugin.settings.apiBaseUrl)
+					.onChange(async (v) => {
+						this.plugin.settings.apiBaseUrl = v.trim().replace(/\/$/, "");
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("OWUI API key")
+			.setDesc("Bearer token for Open WebUI. Stored in this vault's plugin data.")
+			.addText((t) => {
+				t.inputEl.type = "password";
+				t
+					.setPlaceholder("sk-…")
+					.setValue(this.plugin.settings.owuiApiKey)
+					.onChange(async (v) => {
+						this.plugin.settings.owuiApiKey = v.trim();
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Knowledge base name")
+			.setDesc("OWUI KB to query. Resolved to its id at startup and cached.")
+			.addText((t) =>
+				t
+					.setValue(this.plugin.settings.kbName)
+					.onChange(async (v) => {
+						this.plugin.settings.kbName = v.trim();
+						this.plugin.invalidateKbId();
+						await this.plugin.saveSettings();
+					})
+			);
+
+		containerEl.createEl("h3", { text: "Sidebar & palette" });
+
+		new Setting(containerEl)
+			.setName("Top K (sidebar)")
+			.addSlider((s) =>
+				s
+					.setLimits(3, 25, 1)
+					.setDynamicTooltip()
+					.setValue(this.plugin.settings.topKSidebar)
+					.onChange(async (v) => {
+						this.plugin.settings.topKSidebar = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Top K (palette)")
+			.addSlider((s) =>
+				s
+					.setLimits(3, 30, 1)
+					.setDynamicTooltip()
+					.setValue(this.plugin.settings.topKPalette)
+					.onChange(async (v) => {
+						this.plugin.settings.topKPalette = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Sidebar debounce (ms)")
+			.addSlider((s) =>
+				s
+					.setLimits(150, 2000, 50)
+					.setDynamicTooltip()
+					.setValue(this.plugin.settings.sidebarDebounceMs)
+					.onChange(async (v) => {
+						this.plugin.settings.sidebarDebounceMs = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Palette debounce (ms)")
+			.addSlider((s) =>
+				s
+					.setLimits(100, 1000, 25)
+					.setDynamicTooltip()
+					.setValue(this.plugin.settings.paletteDebounceMs)
+					.onChange(async (v) => {
+						this.plugin.settings.paletteDebounceMs = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		containerEl.createEl("h3", { text: "Neighborhood graph" });
+
+		new Setting(containerEl)
+			.setName("First-ring N")
+			.setDesc("Nearest neighbors of the active note.")
+			.addSlider((s) =>
+				s
+					.setLimits(4, 30, 1)
+					.setDynamicTooltip()
+					.setValue(this.plugin.settings.graphFirstRingN)
+					.onChange(async (v) => {
+						this.plugin.settings.graphFirstRingN = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Second-ring M")
+			.setDesc("Nearest neighbors of each first-ring note.")
+			.addSlider((s) =>
+				s
+					.setLimits(0, 15, 1)
+					.setDynamicTooltip()
+					.setValue(this.plugin.settings.graphSecondRingM)
+					.onChange(async (v) => {
+						this.plugin.settings.graphSecondRingM = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Edge similarity floor")
+			.setDesc("Edges with score below this are dropped.")
+			.addSlider((s) =>
+				s
+					.setLimits(0, 0.95, 0.05)
+					.setDynamicTooltip()
+					.setValue(this.plugin.settings.graphScoreFloor)
+					.onChange(async (v) => {
+						this.plugin.settings.graphScoreFloor = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Graph debounce (ms)")
+			.addSlider((s) =>
+				s
+					.setLimits(300, 3000, 100)
+					.setDynamicTooltip()
+					.setValue(this.plugin.settings.graphDebounceMs)
+					.onChange(async (v) => {
+						this.plugin.settings.graphDebounceMs = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		containerEl.createEl("h3", { text: "Misc" });
+
+		new Setting(containerEl)
+			.setName("Min note length (chars)")
+			.setDesc("Skip notes smaller than this when computing related/graph queries.")
+			.addText((t) =>
+				t
+					.setValue(String(this.plugin.settings.minNoteChars))
+					.onChange(async (v) => {
+						const n = Number.parseInt(v, 10);
+						if (Number.isFinite(n) && n >= 0) {
+							this.plugin.settings.minNoteChars = n;
+							await this.plugin.saveSettings();
+						}
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Show scores in UI")
+			.addToggle((t) =>
+				t
+					.setValue(this.plugin.settings.showScores)
+					.onChange(async (v) => {
+						this.plugin.settings.showScores = v;
+						await this.plugin.saveSettings();
+					})
+			);
+	}
+}
