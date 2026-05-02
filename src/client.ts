@@ -110,6 +110,16 @@ export class CordycepClient {
 		return match.id;
 	}
 
+	// Over-fetch + dedupe + exclude self. Use this in views; raw `query`
+	// returns whatever chunks the backend hands back, which can all collapse
+	// to a single file (or to the active note itself).
+	async querySimilarFiles(q: string, k: number, excludePath?: string): Promise<QueryResult[]> {
+		const overshoot = Math.max(k * 6 + 10, 30);
+		const raw = await this.query(q, overshoot);
+		const filtered = excludePath ? raw.filter((r) => r.vaultPath !== excludePath) : raw;
+		return filtered.slice(0, k);
+	}
+
 	async query(q: string, k: number): Promise<QueryResult[]> {
 		if (!q.trim()) return [];
 		const kbId = await this.resolveKbId();

@@ -1,4 +1,5 @@
 import { App, TFile, CachedMetadata } from "obsidian";
+import type { QueryResult } from "./client";
 
 export interface LinkContext {
 	linkedPaths: Set<string>;
@@ -41,6 +42,54 @@ function normalizeAliases(raw: unknown): string[] {
 			.filter((s) => s.length > 0);
 	}
 	return [];
+}
+
+// Materialize each linked vault path as a synthetic QueryResult so the views
+// can render explicit wikilinks alongside semantic neighbors.
+export function linkedPathsAsResults(app: App, linkedPaths: Set<string>): QueryResult[] {
+	const out: QueryResult[] = [];
+	for (const p of linkedPaths) {
+		const f = app.vault.getAbstractFileByPath(p);
+		if (f instanceof TFile && f.extension === "md") {
+			out.push({
+				vaultPath: f.path,
+				displayName: f.basename,
+				snippet: "",
+				score: 0,
+				rawSource: f.path,
+			});
+		}
+	}
+	return out;
+}
+
+// Merge linked + semantic results by vault path. Linked-only entries keep
+// their placeholder score (0). Linked entries also present in semantic
+// results adopt the semantic snippet + score. Sort: linked first, then
+// semantic-only by score desc.
+export function mergeLinkedAndSemantic(
+	semantic: QueryResult[],
+	linked: QueryResult[],
+	linkedPaths: Set<string>,
+	limit: number
+): QueryResult[] {
+	const byKey = new Map<string, QueryResult>();
+	for (const r of semantic) {
+		const key = r.vaultPath ?? r.rawSource;
+		byKey.set(key, r);
+	}
+	for (const r of linked) {
+		const key = r.vaultPath ?? r.rawSource;
+		if (!byKey.has(key)) byKey.set(key, r);
+	}
+	const merged = Array.from(byKey.values());
+	merged.sort((a, b) => {
+		const aLinked = a.vaultPath ? linkedPaths.has(a.vaultPath) : false;
+		const bLinked = b.vaultPath ? linkedPaths.has(b.vaultPath) : false;
+		if (aLinked !== bLinked) return aLinked ? -1 : 1;
+		return b.score - a.score;
+	});
+	return merged.slice(0, limit);
 }
 
 // Build the query text used for "find related to this note" — leads with

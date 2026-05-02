@@ -12,7 +12,7 @@ import {
 import type CordycepSemanticPlugin from "./main";
 import { debounce, stripFrontmatter, topFolder } from "./util";
 import type { QueryResult } from "./client";
-import { getLinkContext, buildContextualQuery } from "./links";
+import { getLinkContext, buildContextualQuery, linkedPathsAsResults } from "./links";
 
 export const GRAPH_VIEW_TYPE = "cordycep-semantic-graph";
 
@@ -157,11 +157,16 @@ export class NeighborhoodGraphView extends ItemView {
 			}
 			const ctx = getLinkContext(this.app, file);
 			const centerQuery = buildContextualQuery(ctx, body);
-			const firstRing = await this.plugin.client.query(
+			const firstRing = await this.plugin.client.querySimilarFiles(
 				centerQuery,
-				this.plugin.settings.graphFirstRingN + 1 // +1 to discard self-match
+				this.plugin.settings.graphFirstRingN,
+				file.path
 			);
-			const firstFiltered = firstRing.filter((r) => r.vaultPath !== file.path);
+			// Include explicit wikilinks as first-ring nodes regardless of
+			// whether they showed up in the semantic top-N.
+			const linkedFirstRing = linkedPathsAsResults(this.app, ctx.linkedPaths)
+				.filter((r) => r.vaultPath !== file.path);
+			const firstFiltered = mergeBy(firstRing, linkedFirstRing);
 
 			// Second-ring queries in parallel — use each first-ring node's
 			// snippet as the query (we don't have the full body of those
@@ -214,10 +219,11 @@ export class NeighborhoodGraphView extends ItemView {
 		byId.set(center.id, center);
 
 		for (const r of firstRing) {
-			if (r.score < floor) continue;
 			const id = r.vaultPath ?? r.rawSource;
 			if (!id || id === centerPath) continue;
 			const isLinked = r.vaultPath ? centerLinkedPaths.has(r.vaultPath) : false;
+			// Drop sub-floor *semantic* edges, but always keep explicit links.
+			if (r.score < floor && !isLinked) continue;
 			let node = byId.get(id);
 			if (!node) {
 				node = {
@@ -233,7 +239,7 @@ export class NeighborhoodGraphView extends ItemView {
 			}
 			if (r.score > node.bestScore) node.bestScore = r.score;
 			if (isLinked) node.linked = true;
-			node.weight += r.score;
+			node.weight += Math.max(r.score, isLinked ? 0.5 : 0);
 			links.push({
 				source: centerPath,
 				target: id,
@@ -532,4 +538,24 @@ function sameEdge(l: GraphLink, a: string, b: string): boolean {
 	const sId = typeof l.source === "string" ? l.source : l.source.id;
 	const tId = typeof l.target === "string" ? l.target : l.target.id;
 	return (sId === a && tId === b) || (sId === b && tId === a);
+}
+
+// Union of two QueryResult lists by vault path, preferring entries from
+// the first list (which carry semantic snippets/scores).
+function mergeBy(primary: QueryResult[], extra: QueryResult[]): QueryResult[] {
+	const seen = new Set<string>();
+	const out: QueryResult[] = [];
+	for (const r of primary) {
+		const key = r.vaultPath ?? r.rawSource;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(r);
+	}
+	for (const r of extra) {
+		const key = r.vaultPath ?? r.rawSource;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(r);
+	}
+	return out;
 }

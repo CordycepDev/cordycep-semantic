@@ -2,7 +2,7 @@ import { ItemView, WorkspaceLeaf, TFile, MarkdownView, setIcon } from "obsidian"
 import type CordycepSemanticPlugin from "./main";
 import type { QueryResult } from "./client";
 import { debounce, stripFrontmatter } from "./util";
-import { getLinkContext, buildContextualQuery } from "./links";
+import { getLinkContext, buildContextualQuery, linkedPathsAsResults, mergeLinkedAndSemantic } from "./links";
 
 export const RELATED_VIEW_TYPE = "cordycep-semantic-related";
 
@@ -99,9 +99,12 @@ export class RelatedNotesView extends ItemView {
 			}
 			const ctx = getLinkContext(this.app, file);
 			const query = buildContextualQuery(ctx, body);
-			const results = await this.plugin.client.query(query, this.plugin.settings.topKSidebar);
-			const filtered = results.filter((r) => r.vaultPath !== file.path);
-			this.renderResults(filtered, ctx.linkedPaths);
+			const k = this.plugin.settings.topKSidebar;
+			const semantic = await this.plugin.client.querySimilarFiles(query, k * 2, file.path);
+			const linkedAsResults = linkedPathsAsResults(this.app, ctx.linkedPaths)
+				.filter((r) => r.vaultPath !== file.path);
+			const merged = mergeLinkedAndSemantic(semantic, linkedAsResults, ctx.linkedPaths, k);
+			this.renderResults(merged, ctx.linkedPaths);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			this.renderEmpty(`Error: ${msg}`);
@@ -161,7 +164,7 @@ export class RelatedNotesView extends ItemView {
 				e.preventDefault();
 				this.openResult(r, e.metaKey || e.ctrlKey);
 			});
-			if (this.plugin.settings.showScores) {
+			if (this.plugin.settings.showScores && r.score > 0) {
 				titleRow.createSpan({
 					cls: "cordycep-score",
 					text: r.score.toFixed(2),
