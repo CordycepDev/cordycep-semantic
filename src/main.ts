@@ -88,11 +88,16 @@ export default class CordycepSemanticPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData()
-		);
+		const saved = (await this.loadData()) as (Partial<CordycepSettings> & { _migratedV080?: boolean }) | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved ?? {});
+		// v0.8 one-shot migration: graphAccumulate was on by default in v0.7
+		// and turned out to be the wrong default. Force-off once; the user
+		// can re-enable from settings if they actually want it.
+		if (saved && !saved._migratedV080) {
+			this.settings.graphAccumulate = false;
+			(this.settings as Partial<CordycepSettings> & { _migratedV080?: boolean })._migratedV080 = true;
+			await this.saveSettings();
+		}
 	}
 
 	async saveSettings() {

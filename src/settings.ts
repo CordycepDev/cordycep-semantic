@@ -61,7 +61,7 @@ export const DEFAULT_SETTINGS: CordycepSettings = {
 	colorHoverRing: "#ffffff",
 	colorNodeLabel: "#e1e1eb",
 	colorFolderFallback: "#7dcfff",
-	graphAccumulate: true,
+	graphAccumulate: false,
 	folderPalette: '{"Walk of Life":"#7aa2f7","Zen":"#9ece6a","Academy":"#e0af68","(root)":"#bb9af7"}',
 };
 
