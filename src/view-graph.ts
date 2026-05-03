@@ -39,7 +39,6 @@ const DEFAULT_FOLDER_PALETTE: Record<string, string> = {
 	"Academy": "#e0af68",
 	"(root)": "#bb9af7",
 };
-const FALLBACK_COLOR = "#7dcfff";
 
 function parseFolderPalette(raw: string): Record<string, string> {
 	if (!raw.trim()) return DEFAULT_FOLDER_PALETTE;
@@ -110,7 +109,11 @@ export class NeighborhoodGraphView extends ItemView {
 
 		const header = root.createDiv({ cls: "cordycep-graph-header" });
 		header.createEl("h4", { text: "Semantic neighborhood" });
-		const refresh = header.createEl("button", { cls: "cordycep-icon-btn", attr: { "aria-label": "Refresh" } });
+		const headerRight = header.createDiv({ cls: "cordycep-header-controls" });
+		const reset = headerRight.createEl("button", { cls: "cordycep-icon-btn", attr: { "aria-label": "Reset graph (clear accumulated nodes)" } });
+		setIcon(reset, "trash-2");
+		reset.addEventListener("click", () => this.resetGraph());
+		const refresh = headerRight.createEl("button", { cls: "cordycep-icon-btn", attr: { "aria-label": "Refresh" } });
 		setIcon(refresh, "refresh-cw");
 		refresh.addEventListener("click", () => void this.run(true));
 
@@ -213,11 +216,13 @@ export class NeighborhoodGraphView extends ItemView {
 			);
 			const secondRingByFirst = await Promise.all(secondRingPromises);
 
-			this.buildGraph(file.path, firstFiltered, secondRingByFirst, ctx.linkedPaths);
+			const built = this.buildGraph(file.path, firstFiltered, secondRingByFirst, ctx.linkedPaths);
+			this.mergeIntoAccumulated(file.path, built.newNodes, built.newLinks);
 			this.layoutAndStart();
 			const linkedCount = this.links.filter((l) => l.linked).length;
+			const acc = this.plugin.settings.graphAccumulate ? " (accumulating)" : "";
 			this.setStatus(
-				`${this.nodes.length} nodes · ${this.links.length} edges (${linkedCount} linked) · ${Math.round(
+				`${this.nodes.length} nodes · ${this.links.length} edges (${linkedCount} linked)${acc} · ${Math.round(
 					performance.now() - t0
 				)}ms`
 			);
@@ -232,7 +237,7 @@ export class NeighborhoodGraphView extends ItemView {
 		firstRing: QueryResult[],
 		secondRing: { from: QueryResult; neighbors: QueryResult[] }[],
 		centerLinkedPaths: Set<string>
-	) {
+	): { newNodes: GraphNode[]; newLinks: GraphLink[] } {
 		const floor = this.plugin.settings.graphScoreFloor;
 		const byId = new Map<string, GraphNode>();
 		const links: GraphLink[] = [];
@@ -325,8 +330,71 @@ export class NeighborhoodGraphView extends ItemView {
 			}
 		}
 
+		return { newNodes: Array.from(byId.values()), newLinks: links };
+	}
+
+	private mergeIntoAccumulated(centerPath: string, newNodes: GraphNode[], newLinks: GraphLink[]) {
+		// Accumulate mode: keep everything from previous renders. Off mode:
+		// replace wholesale.
+		if (!this.plugin.settings.graphAccumulate) {
+			this.nodes = newNodes;
+			this.links = newLinks;
+			return;
+		}
+
+		const byId = new Map<string, GraphNode>();
+		for (const n of this.nodes) byId.set(n.id, n);
+
+		// Demote any existing center that isn't the new one.
+		for (const n of byId.values()) {
+			if (n.ring === 0 && n.id !== centerPath) n.ring = 1;
+		}
+
+		for (const incoming of newNodes) {
+			const existing = byId.get(incoming.id);
+			if (!existing) {
+				byId.set(incoming.id, incoming);
+				continue;
+			}
+			// Update score / linked / ring based on the new query, but keep
+			// the existing position (x/y/fx/fy) so it doesn't move.
+			if (incoming.bestScore > existing.bestScore) existing.bestScore = incoming.bestScore;
+			if (incoming.linked) existing.linked = true;
+			if (incoming.id === centerPath) existing.ring = 0;
+			else if (existing.ring > incoming.ring) existing.ring = incoming.ring;
+			existing.weight = Math.max(existing.weight, incoming.weight);
+			// Update label (filename may have changed) + folder
+			existing.label = incoming.label;
+			existing.folder = incoming.folder;
+		}
+
+		// Merge links — drop dupes (sameEdge) but tolerate node references
+		// from older renders by re-resolving to the live node objects.
+		const existingLinks = this.links.filter((l) => {
+			const sId = typeof l.source === "string" ? l.source : l.source.id;
+			const tId = typeof l.target === "string" ? l.target : l.target.id;
+			return byId.has(sId) && byId.has(tId);
+		});
+		for (const link of newLinks) {
+			const sId = typeof link.source === "string" ? link.source : link.source.id;
+			const tId = typeof link.target === "string" ? link.target : link.target.id;
+			if (existingLinks.some((l) => sameEdge(l, sId, tId))) continue;
+			existingLinks.push(link);
+		}
+
 		this.nodes = Array.from(byId.values());
-		this.links = links;
+		this.links = existingLinks;
+	}
+
+	resetGraph() {
+		this.sim?.stop();
+		this.nodes = [];
+		this.links = [];
+		this.carriedPositions.clear();
+		this.transform = { x: 0, y: 0, k: 1 };
+		this.draw();
+		// Re-run for the active note from a clean slate.
+		void this.run(true);
 	}
 
 	private snapshotPositions() {
@@ -383,6 +451,9 @@ export class NeighborhoodGraphView extends ItemView {
 		const colorSemantic = this.plugin.settings.colorSemantic;
 		const colorCenter = this.plugin.settings.colorCenter;
 		const colorBg = this.plugin.settings.colorBackground;
+		const colorHover = this.plugin.settings.colorHoverRing;
+		const colorLabel = this.plugin.settings.colorNodeLabel;
+		const colorFallback = this.plugin.settings.colorFolderFallback;
 		const folderPalette = parseFolderPalette(this.plugin.settings.folderPalette);
 
 		ctx.fillStyle = colorBg;
@@ -449,12 +520,12 @@ export class NeighborhoodGraphView extends ItemView {
 
 			ctx.beginPath();
 			ctx.arc(node.x, node.y!, r, 0, Math.PI * 2);
-			ctx.fillStyle = node.ring === 0 ? colorCenter : (folderPalette[node.folder] ?? FALLBACK_COLOR);
+			ctx.fillStyle = node.ring === 0 ? colorCenter : (folderPalette[node.folder] ?? colorFallback);
 			ctx.fill();
 
 			if (node === this.hovered) {
 				ctx.lineWidth = 2;
-				ctx.strokeStyle = "#ffffff";
+				ctx.strokeStyle = colorHover;
 				ctx.stroke();
 			}
 
@@ -465,7 +536,7 @@ export class NeighborhoodGraphView extends ItemView {
 			const labelText = showScore
 				? `${node.label}  ${displayedScore.toFixed(2)}${boost > 0 ? "*" : ""}`
 				: node.label;
-			ctx.fillStyle = node === this.hovered ? "#ffffff" : "rgba(225,225,235,0.95)";
+			ctx.fillStyle = node === this.hovered ? colorHover : colorLabel;
 			ctx.font = `${node.ring === 0 ? 13 : 11}px var(--font-interface)`;
 			ctx.textAlign = "left";
 			ctx.textBaseline = "middle";
@@ -473,7 +544,7 @@ export class NeighborhoodGraphView extends ItemView {
 			const lw = ctx.measureText(labelText).width;
 			ctx.fillStyle = hexToRgba(colorBg, 0.7);
 			ctx.fillRect(node.x + r + 2, node.y! - 8, lw + 6, 16);
-			ctx.fillStyle = node === this.hovered ? "#ffffff" : "rgba(225,225,235,0.95)";
+			ctx.fillStyle = node === this.hovered ? colorHover : colorLabel;
 			ctx.fillText(labelText, node.x + r + 5, node.y!);
 		}
 

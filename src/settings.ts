@@ -27,7 +27,11 @@ export interface CordycepSettings {
 	colorMutual: string;          // both directions
 	colorSemantic: string;        // semantic-only
 	colorBackground: string;
+	colorHoverRing: string;       // outline shown around the hovered node
+	colorNodeLabel: string;       // node-label ink in graph
+	colorFolderFallback: string;  // node color when folder isn't in folderPalette
 	folderPalette: string;        // JSON map: { "Walk of Life": "#...", ... } — empty/invalid = defaults
+	graphAccumulate: boolean;     // keep nodes/edges from previous active notes pinned in place
 }
 
 export const DEFAULT_SETTINGS: CordycepSettings = {
@@ -54,6 +58,10 @@ export const DEFAULT_SETTINGS: CordycepSettings = {
 	colorMutual: "#9ece6a",     // green — mutual
 	colorSemantic: "#7dcfff",   // blue — semantic-only
 	colorBackground: "#0d0d12",
+	colorHoverRing: "#ffffff",
+	colorNodeLabel: "#e1e1eb",
+	colorFolderFallback: "#7dcfff",
+	graphAccumulate: true,
 	folderPalette: '{"Walk of Life":"#7aa2f7","Zen":"#9ece6a","Academy":"#e0af68","(root)":"#bb9af7"}',
 };
 
@@ -305,7 +313,11 @@ export class CordycepSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("h3", { text: "Colors (graph)" });
 
-		const colorRow = (label: string, key: "colorCenter" | "colorLinked" | "colorBacklink" | "colorMutual" | "colorSemantic" | "colorBackground", desc?: string) =>
+		type ColorKey =
+			| "colorCenter" | "colorLinked" | "colorBacklink" | "colorMutual"
+			| "colorSemantic" | "colorBackground" | "colorHoverRing"
+			| "colorNodeLabel" | "colorFolderFallback";
+		const colorRow = (label: string, key: ColorKey, desc?: string) =>
 			new Setting(containerEl)
 				.setName(label)
 				.setDesc(desc ?? "")
@@ -323,6 +335,21 @@ export class CordycepSettingTab extends PluginSettingTab {
 		colorRow("Mutual link (BOTH)", "colorMutual", "Both directions linked.");
 		colorRow("Semantic edges", "colorSemantic", "Color for semantic-only edges (NEW results).");
 		colorRow("Graph background", "colorBackground");
+		colorRow("Hover ring", "colorHoverRing", "Outline drawn around the hovered node.");
+		colorRow("Node label", "colorNodeLabel", "Text color for node names + scores.");
+		colorRow("Folder fallback", "colorFolderFallback", "Used when a node's top-level folder isn't in the palette below.");
+
+		new Setting(containerEl)
+			.setName("Accumulate graph across navigations")
+			.setDesc("Keep nodes from previous active notes pinned in place when you navigate. Use the 'Reset graph' command to clear.")
+			.addToggle((t) =>
+				t
+					.setValue(this.plugin.settings.graphAccumulate)
+					.onChange(async (v) => {
+						this.plugin.settings.graphAccumulate = v;
+						await this.plugin.saveSettings();
+					})
+			);
 
 		new Setting(containerEl)
 			.setName("Folder palette")

@@ -53,6 +53,18 @@ export default class CordycepSemanticPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: "reset-neighborhood-graph",
+			name: "Reset neighborhood graph",
+			callback: () => {
+				const leaves = this.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
+				for (const leaf of leaves) {
+					const view = leaf.view as { resetGraph?: () => void };
+					view.resetGraph?.();
+				}
+			},
+		});
+
+		this.addCommand({
 			id: "semantic-search",
 			name: "Semantic search…",
 			callback: () => new SemanticSearchModal(this.app, this).open(),
