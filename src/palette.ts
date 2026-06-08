@@ -1,7 +1,6 @@
 import { App, SuggestModal, TFile } from "obsidian";
 import type CordycepSemanticPlugin from "./main";
 import type { QueryResult } from "./client";
-import { debounce } from "./util";
 import { classifyLink, LinkKind } from "./links";
 
 export interface PaletteOptions {
@@ -14,7 +13,7 @@ export interface PaletteOptions {
 
 export class SemanticSearchModal extends SuggestModal<QueryResult> {
 	private plugin: CordycepSemanticPlugin;
-	private debouncedQuery: (q: string) => void;
+	private debounceHandle: number | null = null;
 	private latestQuery = "";
 	private resolveSuggestions: ((r: QueryResult[]) => void) | null = null;
 	private opts: PaletteOptions;
@@ -24,7 +23,17 @@ export class SemanticSearchModal extends SuggestModal<QueryResult> {
 		this.plugin = plugin;
 		this.opts = opts;
 		this.setPlaceholder(opts.header ?? "Search vault by meaning…");
-		this.debouncedQuery = debounce((q: string) => {
+	}
+
+	// Re-read the debounce interval from settings on every schedule so that
+	// changing the debounce slider takes effect immediately on long-lived
+	// sidebar/graph views without needing to reopen the modal.
+	private debouncedQuery(q: string) {
+		if (this.debounceHandle !== null) {
+			window.clearTimeout(this.debounceHandle);
+		}
+		this.debounceHandle = window.setTimeout(() => {
+			this.debounceHandle = null;
 			void this.runQuery(q);
 		}, this.plugin.settings.paletteDebounceMs);
 	}

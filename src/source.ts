@@ -32,10 +32,22 @@ export function parseSource(rawSource: string | undefined): ParsedSource {
 	}
 
 	if (stripped.startsWith(LEGACY_PREFIX)) {
+		// The legacy encoding turned '/' into '-' and ' ' into '_', which is
+		// lossy: real dashes/underscores in filenames are indistinguishable
+		// from separators, so splitting on '-' mangles hyphenated paths. We
+		// cannot reconstruct a reliable vault path from this, so leave it null
+		// rather than handing callers a corrupted key to open/dedupe on.
+		// displayName is kept best-effort (last segment only) for UI labeling.
+		// TODO(review): legacy notes should be re-ingested in the new
+		// (U+2016-separated) format so vaultPath can be resolved reliably.
 		const body = stripped.slice(LEGACY_PREFIX.length);
-		const segments = body.split("-").map((s) => s.replaceAll("_", " "));
-		const path = segments.join("/");
-		return { vaultPath: path, displayName: basename(path), format: "legacy" };
+		const segments = body.split("-").map((s) => s.split("_").join(" "));
+		const bestEffortPath = segments.join("/");
+		return {
+			vaultPath: null,
+			displayName: basename(bestEffortPath),
+			format: "legacy",
+		};
 	}
 
 	return { vaultPath: null, displayName: stripped, format: "unknown" };

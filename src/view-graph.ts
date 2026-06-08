@@ -44,8 +44,14 @@ function parseFolderPalette(raw: string): Record<string, string> {
 	if (!raw.trim()) return DEFAULT_FOLDER_PALETTE;
 	try {
 		const parsed = JSON.parse(raw);
-		if (parsed && typeof parsed === "object") {
-			return parsed as Record<string, string>;
+		// Must be a plain object (not an array) mapping folder -> color.
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			const out: Record<string, string> = {};
+			for (const [key, value] of Object.entries(parsed)) {
+				// Keep only string-valued entries; ignore anything else.
+				if (typeof value === "string") out[key] = value;
+			}
+			return out;
 		}
 	} catch {
 		// fall through
@@ -82,6 +88,9 @@ export class NeighborhoodGraphView extends ItemView {
 	// that survive a navigation (especially the new center = node you just
 	// clicked, and the old center) stay put instead of jolting around.
 	private carriedPositions = new Map<string, { x: number; y: number }>();
+	// Monotonic token bumped on every run(). Lets a superseded run bail out
+	// after its awaits instead of overwriting the graph with stale results.
+	private runToken = 0;
 
 	constructor(leaf: WorkspaceLeaf, plugin: CordycepSemanticPlugin) {
 		super(leaf);
@@ -177,6 +186,12 @@ export class NeighborhoodGraphView extends ItemView {
 		if (!file || file.extension !== "md") return;
 		if (!force && file.path !== this.currentPath) return;
 
+		// Capture a run-token up front; if a newer run() starts while this one
+		// is awaiting network calls, this token will no longer match and we
+		// bail before mutating the graph (prevents a stale fan-out from
+		// overwriting fresher results).
+		const token = ++this.runToken;
+
 		// Snapshot current node positions before we rebuild — nodes that
 		// survive into the next graph will reuse these (no jolt).
 		this.snapshotPositions();
@@ -184,6 +199,7 @@ export class NeighborhoodGraphView extends ItemView {
 		const t0 = performance.now();
 		try {
 			const raw = await this.app.vault.read(file);
+			if (token !== this.runToken) return;
 			const body = stripFrontmatter(raw).trim();
 			if (body.length < this.plugin.settings.minNoteChars) {
 				this.setStatus(`Note shorter than ${this.plugin.settings.minNoteChars} chars — too small to graph.`);
@@ -196,6 +212,7 @@ export class NeighborhoodGraphView extends ItemView {
 				this.plugin.settings.graphFirstRingN,
 				file.path
 			);
+			if (token !== this.runToken) return;
 			// Include explicit wikilinks as first-ring nodes regardless of
 			// whether they showed up in the semantic top-N.
 			const linkedFirstRing = linkedPathsAsResults(this.app, ctx.linkedPaths)
@@ -215,6 +232,7 @@ export class NeighborhoodGraphView extends ItemView {
 					)
 			);
 			const secondRingByFirst = await Promise.all(secondRingPromises);
+			if (token !== this.runToken) return;
 
 			const built = this.buildGraph(file.path, firstFiltered, secondRingByFirst, ctx.linkedPaths);
 			this.mergeIntoAccumulated(file.path, built.newNodes, built.newLinks);
@@ -655,13 +673,16 @@ export class NeighborhoodGraphView extends ItemView {
 			panStart = { x: this.transform.x, y: this.transform.y };
 			c.style.cursor = "grabbing";
 		});
-		window.addEventListener("mousemove", (e) => {
+		// Registered via registerDomEvent so they auto-remove when the view
+		// closes (otherwise these window-level listeners leak across the
+		// open/close lifecycle of each graph view).
+		this.registerDomEvent(window, "mousemove", (e) => {
 			if (!panOrigin || !panStart) return;
 			this.transform.x = panStart.x + (e.clientX - panOrigin.x);
 			this.transform.y = panStart.y + (e.clientY - panOrigin.y);
 			this.draw();
 		});
-		window.addEventListener("mouseup", () => {
+		this.registerDomEvent(window, "mouseup", () => {
 			if (panOrigin) c.style.cursor = "default";
 			panOrigin = null;
 			panStart = null;

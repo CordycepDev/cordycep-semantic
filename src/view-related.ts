@@ -107,8 +107,13 @@ export class RelatedNotesView extends ItemView {
 		if (!file || file.extension !== "md") return;
 		if (!force && file.path !== this.currentPath) return;
 
+		// Capture the path this run is for; re-check after each await so an
+		// in-flight run doesn't render results for a since-changed note.
+		const runPath = file.path;
+
 		try {
 			const raw = await this.app.vault.read(file);
+			if (this.app.workspace.getActiveFile()?.path !== runPath) return;
 			const body = stripFrontmatter(raw).trim();
 			if (body.length < this.plugin.settings.minNoteChars) {
 				this.renderEmpty(
@@ -120,6 +125,7 @@ export class RelatedNotesView extends ItemView {
 			const query = buildContextualQuery(ctx, body);
 			const k = this.plugin.settings.topKSidebar;
 			const semantic = await this.plugin.client.querySimilarFiles(query, k * 2, file.path);
+			if (this.app.workspace.getActiveFile()?.path !== runPath) return;
 			const linkedAsResults = linkedPathsAsResults(this.app, ctx.linkedPaths)
 				.filter((r) => r.vaultPath !== file.path);
 			const merged = mergeLinkedAndSemantic(semantic, linkedAsResults, {
