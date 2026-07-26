@@ -10,6 +10,7 @@ export interface CordycepSettings {
 	kbName: string;
 	topKSidebar: number;
 	topKPalette: number;
+	sidebarLinkHops: number;      // 0 = off; N = also show notes within N wikilink hops of the active note + its top semantic hits
 	graphFirstRingN: number;
 	graphSecondRingM: number;
 	graphScoreFloor: number;
@@ -41,6 +42,7 @@ export const DEFAULT_SETTINGS: CordycepSettings = {
 	kbName: "Obsidian Vault",
 	topKSidebar: 10,
 	topKPalette: 15,
+	sidebarLinkHops: 0,
 	graphFirstRingN: 12,
 	graphSecondRingM: 5,
 	graphScoreFloor: 0.55,
@@ -155,6 +157,22 @@ export class CordycepSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.topKPalette)
 					.onChange(async (v) => {
 						this.plugin.settings.topKPalette = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Link-hop expansion (sidebar)")
+			.setDesc(
+				"Also list notes within N wikilink hops of the active note and its top semantic hits, in a separate section below the ranked results. 0 = off. This is the multi-hop / relational layer semantic search alone can't surface."
+			)
+			.addSlider((s) =>
+				s
+					.setLimits(0, 3, 1)
+					.setDynamicTooltip()
+					.setValue(this.plugin.settings.sidebarLinkHops)
+					.onChange(async (v) => {
+						this.plugin.settings.sidebarLinkHops = v;
 						await this.plugin.saveSettings();
 					})
 			);

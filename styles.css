@@ -184,3 +184,103 @@
 	width: 100%;
 	height: 100%;
 }
+
+/* Link-hop neighborhood section (sidebar) */
+.cordycep-hop-section {
+	margin-top: 10px;
+	padding-top: 6px;
+	border-top: 1px dashed var(--background-modifier-border);
+}
+.cordycep-hop-header {
+	font-size: 10px;
+	font-family: var(--font-monospace);
+	color: var(--text-faint);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	padding: 2px 0 6px;
+}
+.cordycep-result.is-hop {
+	border-left: 2px solid var(--color-green);
+	padding-left: 6px;
+}
+.cordycep-badge.kind-hop {
+	color: #04140a;
+}
+
+/* Connection-path modal */
+.cordycep-path-modal h3 {
+	margin: 0 0 2px;
+}
+.cordycep-path-sub {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-bottom: 10px;
+}
+.cordycep-path-list {
+	display: flex;
+	flex-direction: column;
+}
+.cordycep-path-step {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	padding: 2px 0;
+}
+.cordycep-path-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--text-faint);
+	flex: 0 0 auto;
+	align-self: center;
+}
+.cordycep-path-dot.is-origin { background: var(--color-orange); }
+.cordycep-path-dot.is-target { background: var(--color-green); }
+.cordycep-path-name {
+	color: var(--text-accent);
+	font-weight: 500;
+	cursor: pointer;
+	text-decoration: none;
+}
+.cordycep-path-name:hover { text-decoration: underline; }
+.cordycep-path-folder {
+	font-size: 10px;
+	font-family: var(--font-monospace);
+	color: var(--text-faint);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.cordycep-path-connector {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: 1px;
+	padding: 1px 0;
+	color: var(--text-muted);
+	border-left: 2px solid var(--background-modifier-border);
+	padding-left: 12px;
+	min-height: 18px;
+}
+.cordycep-path-arrow {
+	display: inline-flex;
+	color: var(--text-muted);
+}
+.cordycep-path-arrow svg {
+	width: 14px;
+	height: 14px;
+}
+.cordycep-path-arrow-label {
+	font-size: 11px;
+	color: var(--text-faint);
+	font-style: italic;
+}
+.cordycep-path-empty {
+	padding: 6px 0;
+}
+.cordycep-path-hint {
+	font-size: 12px;
+	color: var(--text-muted);
+	line-height: 1.4;
+	margin: 8px 0 12px;
+}

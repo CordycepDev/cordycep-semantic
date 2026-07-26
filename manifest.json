@@ -1,9 +1,9 @@
 {
   "id": "cordycep-semantic",
   "name": "Cordycep Semantic",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "minAppVersion": "1.5.0",
-  "description": "Semantic search, related notes sidebar, and neighborhood graph powered by your self-hosted cordycep.dev backend.",
+  "description": "Semantic search, related notes, neighborhood graph, and multi-hop wikilink path-finding powered by your self-hosted cordycep.dev backend.",
   "author": "James Russell Johnson",
   "isDesktopOnly": true
 }

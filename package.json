@@ -1,11 +1,12 @@
 {
   "name": "cordycep-semantic",
-  "version": "0.8.0",
-  "description": "Semantic search + related notes + neighborhood graph for Obsidian, backed by cordycep.dev",
+  "version": "0.9.0",
+  "description": "Semantic search + related notes + neighborhood graph + wikilink path-finding for Obsidian, backed by cordycep.dev",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "node esbuild.config.mjs production"
+    "build": "node esbuild.config.mjs production",
+    "test": "node test/run.mjs"
   },
   "keywords": [],
   "author": "James Russell Johnson",

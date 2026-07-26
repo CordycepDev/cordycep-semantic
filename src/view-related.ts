@@ -3,7 +3,14 @@ import type CordycepSemanticPlugin from "./main";
 import type { QueryResult } from "./client";
 import { debounce, stripFrontmatter } from "./util";
 import { getLinkContext, buildContextualQuery, linkedPathsAsResults, mergeLinkedAndSemantic, classifyLink, LinkKind, LinkContext } from "./links";
+import { buildLinkGraph, subgraphNeighbors } from "./graph";
 import type { SortMode } from "./settings";
+
+interface HopNote {
+	path: string;
+	name: string;
+	hop: number;
+}
 
 export const RELATED_VIEW_TYPE = "cordycep-semantic-related";
 
@@ -18,6 +25,7 @@ export class RelatedNotesView extends ItemView {
 	private detachStatus: (() => void) | null = null;
 	private sortMode: SortMode | null = null; // session override; null = use plugin default
 	private lastResults: { merged: QueryResult[]; ctx: LinkContext } | null = null;
+	private hopNotes: HopNote[] = [];
 
 	constructor(leaf: WorkspaceLeaf, plugin: CordycepSemanticPlugin) {
 		super(leaf);
@@ -136,6 +144,7 @@ export class RelatedNotesView extends ItemView {
 				app: this.app,
 			});
 			this.lastResults = { merged, ctx };
+			this.hopNotes = this.computeHopNotes(file.path, semantic, merged);
 			this.renderResults(merged, ctx);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -168,8 +177,12 @@ export class RelatedNotesView extends ItemView {
 	private renderResults(results: QueryResult[], ctx: LinkContext) {
 		this.listEl.empty();
 		this.renderStatus();
-		if (results.length === 0) {
+		if (results.length === 0 && this.hopNotes.length === 0) {
 			this.listEl.createDiv({ cls: "cordycep-empty", text: "No related notes found." });
+			return;
+		}
+		if (results.length === 0) {
+			this.renderHopSection();
 			return;
 		}
 
@@ -218,6 +231,77 @@ export class RelatedNotesView extends ItemView {
 			if (r.snippet) {
 				item.createDiv({ cls: "cordycep-snippet", text: r.snippet });
 			}
+		}
+
+		this.renderHopSection();
+	}
+
+	// Notes within N wikilink hops of the active note or its top semantic hits,
+	// that AREN'T already in the ranked list above. This is the multi-hop /
+	// relational layer: link-connected context that pure vector similarity to
+	// the active note misses. Gated on the sidebarLinkHops setting.
+	private computeHopNotes(
+		activePath: string,
+		semantic: QueryResult[],
+		shown: QueryResult[]
+	): HopNote[] {
+		const hops = this.plugin.settings.sidebarLinkHops;
+		if (hops < 1) return [];
+
+		const graph = buildLinkGraph(this.app);
+		const seeds = [activePath];
+		for (const r of semantic.slice(0, 5)) {
+			if (r.vaultPath) seeds.push(r.vaultPath);
+		}
+		const neighborhood = subgraphNeighbors(graph, seeds, hops);
+
+		const already = new Set<string>([activePath]);
+		for (const r of shown) if (r.vaultPath) already.add(r.vaultPath);
+
+		const out: HopNote[] = [];
+		for (const [path, hop] of neighborhood) {
+			if (already.has(path)) continue;
+			const file = this.app.vault.getAbstractFileByPath(path);
+			if (!(file instanceof TFile) || file.extension !== "md") continue;
+			out.push({ path, name: file.basename, hop });
+		}
+		out.sort((a, b) => a.hop - b.hop || a.name.localeCompare(b.name));
+		return out.slice(0, this.plugin.settings.topKSidebar);
+	}
+
+	private renderHopSection() {
+		if (this.hopNotes.length === 0) return;
+		const hops = this.plugin.settings.sidebarLinkHops;
+		const section = this.listEl.createDiv({ cls: "cordycep-hop-section" });
+		section.createDiv({
+			cls: "cordycep-hop-header",
+			text: `Link neighborhood · within ${hops} ${hops === 1 ? "hop" : "hops"} (${this.hopNotes.length})`,
+		});
+		for (const n of this.hopNotes) {
+			const item = section.createDiv({ cls: "cordycep-result is-hop" });
+			item.style.borderLeftColor = this.plugin.settings.colorMutual;
+			const titleRow = item.createDiv({ cls: "cordycep-title-row" });
+			const badge = titleRow.createSpan({
+				cls: "cordycep-badge kind-hop",
+				attr: { "aria-label": `${n.hop} wikilink hop${n.hop === 1 ? "" : "s"} away` },
+			});
+			badge.setText(`${n.hop}h`);
+			badge.style.backgroundColor = this.plugin.settings.colorMutual;
+			badge.style.color = this.contrastInk(this.plugin.settings.colorMutual);
+			const title = titleRow.createEl("a", {
+				cls: "cordycep-title",
+				text: n.name,
+				href: "#",
+			});
+			title.addEventListener("click", (e) => {
+				e.preventDefault();
+				const file = this.app.vault.getAbstractFileByPath(n.path);
+				if (file instanceof TFile) {
+					this.app.workspace.getLeaf(e.metaKey || e.ctrlKey).openFile(file);
+				} else {
+					this.app.workspace.openLinkText(n.name, "", e.metaKey || e.ctrlKey);
+				}
+			});
 		}
 	}
 

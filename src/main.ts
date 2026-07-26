@@ -9,6 +9,7 @@ import { RelatedNotesView, RELATED_VIEW_TYPE } from "./view-related";
 import { NeighborhoodGraphView, GRAPH_VIEW_TYPE } from "./view-graph";
 import { SemanticSearchModal } from "./palette";
 import { NoteSourcePickerModal } from "./note-picker";
+import { PathTargetPickerModal } from "./path-finder";
 
 export default class CordycepSemanticPlugin extends Plugin {
 	settings!: CordycepSettings;
@@ -74,6 +75,19 @@ export default class CordycepSemanticPlugin extends Plugin {
 			id: "find-similar-to-note",
 			name: "Find notes similar to…",
 			callback: () => new NoteSourcePickerModal(this.app, this).open(),
+		});
+
+		this.addCommand({
+			id: "find-connection-path",
+			name: "Find connection path to…",
+			checkCallback: (checking: boolean) => {
+				const file = this.app.workspace.getActiveFile();
+				const ok = !!file && file.extension === "md";
+				if (ok && !checking) {
+					new PathTargetPickerModal(this.app, this, file!).open();
+				}
+				return ok;
+			},
 		});
 
 		this.addSettingTab(new CordycepSettingTab(this.app, this));
